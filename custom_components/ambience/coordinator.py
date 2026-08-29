@@ -23,7 +23,14 @@ from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, Upda
 from homeassistant.util import dt as dt_util
 
 from . import protocol as p
-from .const import DISCONNECT_DELAY, REPLY_TIMEOUT, SCAN_INTERVAL_SECONDS
+from .const import (
+    CONNECT_ATTEMPTS,
+    DISCONNECT_DELAY,
+    NOTIFY_SETTLE,
+    REPLY_TIMEOUT,
+    RETRY_BACKOFF,
+    SCAN_INTERVAL_SECONDS,
+)
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -56,25 +63,66 @@ class AmbienceCoordinator(DataUpdateCoordinator[p.State]):
             self._reply.set_result(state)
 
     async def _connect(self) -> BleakClient:
+        """Connect and enable notifications, retrying around GATT error 133.
+
+        Enabling notifications means writing the CCCD at handle 0x000b, and
+        through an ESPHome proxy that intermittently fails with ESP32 GATT
+        error 133 - a generic failure, usually a stale cached service table or
+        a descriptor write issued too soon after the link comes up. It is not a
+        protocol fault: the same call succeeds from a native adapter, and the
+        vendor app writes the same handle.
+
+        So: settle briefly before subscribing, and on failure drop the
+        connection entirely and rediscover services rather than retrying on top
+        of a cache that may be what is wrong.
+        """
         if self._client is not None and self._client.is_connected:
             return self._client
 
-        device = bluetooth.async_ble_device_from_address(
-            self.hass, self.address, connectable=True
-        )
-        if device is None:
-            raise UpdateFailed(
-                f"{self.address} was not heard by any Bluetooth proxy recently. "
-                "This device advertises intermittently, so a miss is not "
-                "necessarily a fault."
+        last_error: Exception | None = None
+        for attempt in range(CONNECT_ATTEMPTS):
+            device = bluetooth.async_ble_device_from_address(
+                self.hass, self.address, connectable=True
             )
+            if device is None:
+                raise UpdateFailed(
+                    f"{self.address} was not heard by any Bluetooth proxy "
+                    "recently. This device advertises intermittently, so a "
+                    "miss is not necessarily a fault."
+                )
 
-        client = await establish_connection(
-            BleakClient, device, self.address, max_attempts=3
+            client = await establish_connection(
+                BleakClient,
+                device,
+                self.address,
+                max_attempts=2,
+                # Rediscover on a retry: a wrong cached handle is a prime
+                # suspect for 133, and reusing the cache would repeat it.
+                use_services_cache=attempt == 0,
+            )
+            try:
+                await asyncio.sleep(NOTIFY_SETTLE)
+                await client.start_notify(p.NOTIFY_UUID, self._on_notify)
+            except Exception as err:  # noqa: BLE001 - retried below
+                last_error = err
+                _LOGGER.debug(
+                    "start_notify failed on attempt %s/%s: %s",
+                    attempt + 1, CONNECT_ATTEMPTS, err,
+                )
+                try:
+                    await client.disconnect()
+                except Exception:  # noqa: BLE001 - teardown must not raise
+                    pass
+                await asyncio.sleep(RETRY_BACKOFF * (attempt + 1))
+                continue
+
+            self._client = client
+            return client
+
+        raise UpdateFailed(
+            f"could not enable notifications on {self.address} after "
+            f"{CONNECT_ATTEMPTS} attempts: {last_error}"
         )
-        await client.start_notify(p.NOTIFY_UUID, self._on_notify)
-        self._client = client
-        return client
 
     async def _disconnect_later(self) -> None:
         try:
