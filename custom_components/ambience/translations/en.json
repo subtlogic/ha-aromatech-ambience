@@ -1,0 +1,41 @@
+{
+  "config": {
+    "flow_title": "{name}",
+    "step": {
+      "confirm": {
+        "description": "Add {name} ({address})?"
+      },
+      "user": {
+        "data": {
+          "address": "Device"
+        }
+      }
+    },
+    "abort": {
+      "already_configured": "This diffuser is already set up",
+      "no_devices_found": "No Ambience diffuser was heard recently. It advertises intermittently, so try again in a minute, and check it is in range of a Bluetooth proxy.",
+      "not_supported": "That device is not an AromaTech Ambience"
+    }
+  },
+  "entity": {
+    "switch": {
+      "power": { "name": "Diffuser" },
+      "sound": { "name": "Sound" }
+    },
+    "select": {
+      "light": {
+        "name": "Light",
+        "state": {
+          "off": "Off",
+          "warm": "Warm",
+          "cool": "Cool",
+          "flow": "Flow",
+          "custom": "Custom"
+        }
+      }
+    },
+    "sensor": {
+      "schedule": { "name": "Schedule" }
+    }
+  }
+}

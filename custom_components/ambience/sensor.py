@@ -28,7 +28,7 @@ async def async_setup_entry(
 class AmbienceSchedule(AmbienceEntity, SensorEntity):
     """The active schedule, as the device reports it."""
 
-    _attr_translation_key = "schedule"
+    _attr_name = "Schedule"
     _attr_icon = "mdi:calendar-clock"
 
     def __init__(self, coordinator: AmbienceCoordinator) -> None:

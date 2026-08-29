@@ -23,7 +23,7 @@ async def async_setup_entry(
 class AmbiencePower(AmbienceEntity, SwitchEntity):
     """The diffuser itself."""
 
-    _attr_translation_key = "power"
+    _attr_name = "Diffuser"
     _attr_icon = "mdi:air-filter"
 
     def __init__(self, coordinator: AmbienceCoordinator) -> None:
@@ -43,7 +43,7 @@ class AmbiencePower(AmbienceEntity, SwitchEntity):
 class AmbienceSound(AmbienceEntity, SwitchEntity):
     """The unit's audible feedback, not the diffuser."""
 
-    _attr_translation_key = "sound"
+    _attr_name = "Sound"
     _attr_icon = "mdi:volume-high"
 
     def __init__(self, coordinator: AmbienceCoordinator) -> None:
