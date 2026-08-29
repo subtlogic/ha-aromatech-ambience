@@ -33,7 +33,6 @@ class AmbienceLight(AmbienceEntity, SelectEntity):
     """
 
     _attr_name = "Light"
-    _attr_icon = "mdi:lightbulb"
     _attr_options = list(OPTIONS)
 
     def __init__(self, coordinator: AmbienceCoordinator) -> None:
@@ -47,6 +46,17 @@ class AmbienceLight(AmbienceEntity, SelectEntity):
         if not 0 <= state.light_mode < len(OPTIONS):
             return None
         return OPTIONS[state.light_mode]
+
+    @property
+    def icon(self) -> str:
+        """A different glyph per mode, so the tile reads at a glance."""
+        return {
+            "Off": "mdi:lightbulb-off",
+            "Warm": "mdi:lightbulb-on",
+            "Cool": "mdi:lightbulb-on-outline",
+            "Flow": "mdi:lightbulb-multiple",
+            "Custom": "mdi:palette",
+        }.get(self.current_option or "", "mdi:lightbulb-question")
 
     async def async_select_option(self, option: str) -> None:
         await self.coordinator.async_set_light(OPTIONS.index(option))

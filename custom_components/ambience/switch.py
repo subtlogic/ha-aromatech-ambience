@@ -24,7 +24,6 @@ class AmbiencePower(AmbienceEntity, SwitchEntity):
     """The diffuser itself."""
 
     _attr_name = "Diffuser"
-    _attr_icon = "mdi:air-filter"
 
     def __init__(self, coordinator: AmbienceCoordinator) -> None:
         super().__init__(coordinator, "power")
@@ -36,6 +35,15 @@ class AmbiencePower(AmbienceEntity, SwitchEntity):
     async def async_turn_on(self, **kwargs: Any) -> None:
         await self.coordinator.async_set_power(True)
 
+    @property
+    def icon(self) -> str:
+        # mdi:scent is the diffuser glyph - vapour rising from a bottle. The
+        # previous mdi:air-filter is an HVAC filter, which is a different
+        # appliance entirely.
+        if self.is_on is None:
+            return "mdi:scent-off"
+        return "mdi:scent" if self.is_on else "mdi:scent-off"
+
     async def async_turn_off(self, **kwargs: Any) -> None:
         await self.coordinator.async_set_power(False)
 
@@ -44,7 +52,6 @@ class AmbienceSound(AmbienceEntity, SwitchEntity):
     """The unit's audible feedback, not the diffuser."""
 
     _attr_name = "Sound"
-    _attr_icon = "mdi:volume-high"
 
     def __init__(self, coordinator: AmbienceCoordinator) -> None:
         super().__init__(coordinator, "sound")
@@ -55,6 +62,13 @@ class AmbienceSound(AmbienceEntity, SwitchEntity):
 
     async def async_turn_on(self, **kwargs: Any) -> None:
         await self.coordinator.async_set_sound(True)
+
+    @property
+    def icon(self) -> str:
+        # Showing volume-high while muted was actively misleading.
+        if self.is_on is None:
+            return "mdi:volume-variant-off"
+        return "mdi:volume-high" if self.is_on else "mdi:volume-off"
 
     async def async_turn_off(self, **kwargs: Any) -> None:
         await self.coordinator.async_set_sound(False)

@@ -29,10 +29,16 @@ class AmbienceSchedule(AmbienceEntity, SensorEntity):
     """The active schedule, as the device reports it."""
 
     _attr_name = "Schedule"
-    _attr_icon = "mdi:calendar-clock"
 
     def __init__(self, coordinator: AmbienceCoordinator) -> None:
         super().__init__(coordinator, "schedule")
+
+    @property
+    def icon(self) -> str:
+        state = self.coordinator.data
+        if state is None or state.schedule_enabled is None:
+            return "mdi:calendar-question"
+        return "mdi:calendar-clock" if state.schedule_enabled else "mdi:calendar-remove"
 
     @property
     def native_value(self) -> str | None:

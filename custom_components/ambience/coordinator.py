@@ -51,16 +51,35 @@ class AmbienceCoordinator(DataUpdateCoordinator[p.State]):
         self._disconnect_task: asyncio.Task | None = None
         self._reply: asyncio.Future[p.State] | None = None
         self._reassembler = p.Reassembler()
+        self._accumulated: p.State | None = None
 
     # ------------------------------------------------------------------ BLE
 
     @callback
     def _on_notify(self, _handle, data: bytearray) -> None:
+        """Collect replies, and only finish on one that carries state.
+
+        A command draws TWO replies, not one. The first echoes the command back
+        - a time sync returns a single 0x000a message holding the time just
+        sent - and the real state arrives immediately after as a separate
+        eight-message batch. Resolving on the first reply therefore returns a
+        State with every field None, which is precisely what left the entities
+        at unknown: the receipt was taken for the answer.
+
+        So replies are merged as they arrive and the wait ends only once
+        something usable is present. If nothing usable turns up, the timeout in
+        `_exchange` returns whatever accumulated rather than nothing.
+        """
         state = self._reassembler.feed(bytes(data))
         if state is None:
             return
+        self._reassembler = p.Reassembler()  # ready for the next reply
+        self._accumulated = _merge(self._accumulated, state)
+
+        if not _carries_state(self._accumulated):
+            return
         if self._reply is not None and not self._reply.done():
-            self._reply.set_result(state)
+            self._reply.set_result(self._accumulated)
 
     async def _connect(self) -> BleakClient:
         """Connect and enable notifications, retrying around GATT error 133.
@@ -151,6 +170,7 @@ class AmbienceCoordinator(DataUpdateCoordinator[p.State]):
         async with self._lock:
             client = await self._connect()
             self._reassembler = p.Reassembler()
+            self._accumulated = None
             self._reply = self.hass.loop.create_future()
             try:
                 for frame in frames:
@@ -160,11 +180,11 @@ class AmbienceCoordinator(DataUpdateCoordinator[p.State]):
                         asyncio.shield(self._reply), REPLY_TIMEOUT
                     )
                 except asyncio.TimeoutError:
-                    # Only the 0x03e9 and time-sync commands were ever seen to
-                    # answer. Light and sound appear to be fire-and-forget, so
-                    # a timeout here is expected rather than a failure.
-                    _LOGGER.debug("no reply within %ss", REPLY_TIMEOUT)
-                    return None
+                    # Not necessarily a failure: only 0x03e9 and the time sync
+                    # were ever seen to answer, so light and sound appear to be
+                    # fire-and-forget. Return anything that did arrive.
+                    _LOGGER.debug("no usable reply within %ss", REPLY_TIMEOUT)
+                    return self._accumulated
             finally:
                 self._reply = None
                 self._schedule_disconnect()
@@ -200,6 +220,20 @@ class AmbienceCoordinator(DataUpdateCoordinator[p.State]):
         if state is None:
             raise UpdateFailed("device did not report state after a time sync")
         return _merge(self.data, state)
+
+
+def _carries_state(state: p.State | None) -> bool:
+    """Does this reply actually tell us anything about the device?
+
+    Deliberately not `state is not None`. The echo reply parses perfectly well
+    into a State object with every field unset, and treating that as an answer
+    is the bug this guards against.
+    """
+    if state is None:
+        return False
+    return any(v is not None for v in (
+        state.power, state.light_mode, state.sound, state.days_mask,
+    ))
 
 
 def _merge(old: p.State | None, new: p.State) -> p.State:
