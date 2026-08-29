@@ -21,10 +21,3 @@ REPLY_TIMEOUT = 5.0
 DISCONNECT_DELAY = 20.0
 
 SCAN_INTERVAL_SECONDS = 300
-
-# GATT error 133 through an ESPHome proxy is common and usually transient.
-# Retry the connect-and-subscribe as a unit, dropping the link between tries
-# so services are rediscovered rather than reusing a cache that may be wrong.
-CONNECT_ATTEMPTS = 3
-NOTIFY_SETTLE = 0.5      # let the link settle before writing the CCCD
-RETRY_BACKOFF = 1.0

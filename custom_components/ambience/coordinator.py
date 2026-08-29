@@ -23,16 +23,17 @@ from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, Upda
 from homeassistant.util import dt as dt_util
 
 from . import protocol as p
-from .const import (
-    CONNECT_ATTEMPTS,
-    DISCONNECT_DELAY,
-    NOTIFY_SETTLE,
-    REPLY_TIMEOUT,
-    RETRY_BACKOFF,
-    SCAN_INTERVAL_SECONDS,
-)
+from .const import DISCONNECT_DELAY, REPLY_TIMEOUT, SCAN_INTERVAL_SECONDS
 
 _LOGGER = logging.getLogger(__name__)
+
+# Kept here rather than in const.py so that updating this file alone is a
+# complete upgrade. Splitting them across two files once meant a coordinator
+# that imported names the deployed const.py did not have, and the integration
+# failed to load at all.
+CONNECT_ATTEMPTS = 3
+NOTIFY_SETTLE = 0.5      # let the link settle before writing the CCCD
+RETRY_BACKOFF = 1.0
 
 
 class AmbienceCoordinator(DataUpdateCoordinator[p.State]):
