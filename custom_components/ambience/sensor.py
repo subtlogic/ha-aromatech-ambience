@@ -13,6 +13,7 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
+from . import protocol as _p
 from .const import DOMAIN
 from .coordinator import AmbienceCoordinator
 from .entity import AmbienceEntity
@@ -52,9 +53,11 @@ class AmbienceSchedule(AmbienceEntity, SensorEntity):
 
     @property
     def extra_state_attributes(self) -> dict[str, object]:
-        s = self.coordinator.data
+        c = self.coordinator
+        s = c.data
         if s is None:
             return {}
+        raw = s.raw.get(_p.CMD_POWER)
         return {
             "enabled": s.schedule_enabled,
             "days": s.days,
@@ -65,4 +68,10 @@ class AmbienceSchedule(AmbienceEntity, SensorEntity):
             "light_rgb": s.rgb,
             "light_brightness": s.brightness,
             "firmware": s.firmware,
+            # Diagnostics. A write the device silently ignores looks exactly
+            # like a write that was never sent, unless you can see the bytes.
+            "raw_schedule": raw.hex(" ") if raw else None,
+            "last_write": c.last_write.hex(" ") if c.last_write else None,
+            "last_write_at": c.last_write_at,
+            "last_notify": c.last_notify.hex(" ") if c.last_notify else None,
         }

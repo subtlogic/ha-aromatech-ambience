@@ -13,7 +13,8 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from datetime import timedelta
+from collections.abc import Callable
+from datetime import datetime, timedelta
 
 from bleak import BleakClient
 from bleak_retry_connector import establish_connection
@@ -64,6 +65,12 @@ class AmbienceCoordinator(DataUpdateCoordinator[p.State]):
         self._reply: asyncio.Future[p.State] | None = None
         self._reassembler = p.Reassembler()
         self._accumulated: p.State | None = None
+        # Surfaced as sensor attributes. Without these, "the device ignored the
+        # write" and "we never sent one" look identical from outside Home
+        # Assistant, and separating them took a packet capture and a night.
+        self.last_write: bytes | None = None
+        self.last_write_at: datetime | None = None
+        self.last_notify: bytes | None = None
 
     # ------------------------------------------------------------------ BLE
 
@@ -82,6 +89,7 @@ class AmbienceCoordinator(DataUpdateCoordinator[p.State]):
         something usable is present. If nothing usable turns up, the timeout in
         `_exchange` returns whatever accumulated rather than nothing.
         """
+        self.last_notify = bytes(data)
         state = self._reassembler.feed(bytes(data))
         if state is None:
             return
@@ -93,8 +101,11 @@ class AmbienceCoordinator(DataUpdateCoordinator[p.State]):
         if self._reply is not None and not self._reply.done():
             self._reply.set_result(self._accumulated)
 
-    async def _connect(self) -> BleakClient:
+    async def _connect(self) -> tuple[BleakClient, bool]:
         """Connect and enable notifications, retrying around GATT error 133.
+
+        Returns the client and whether the link is new, because a new link owes
+        the device a greeting before it will accept anything - see `_exchange`.
 
         Enabling notifications means writing the CCCD at handle 0x000b, and
         through an ESPHome proxy that intermittently fails with ESP32 GATT
@@ -108,7 +119,7 @@ class AmbienceCoordinator(DataUpdateCoordinator[p.State]):
         of a cache that may be what is wrong.
         """
         if self._client is not None and self._client.is_connected:
-            return self._client
+            return self._client, False
 
         last_error: Exception | None = None
         for attempt in range(CONNECT_ATTEMPTS):
@@ -148,7 +159,7 @@ class AmbienceCoordinator(DataUpdateCoordinator[p.State]):
                 continue
 
             self._client = client
-            return client
+            return client, True
 
         raise UpdateFailed(
             f"could not enable notifications on {self.address} after "
@@ -177,33 +188,78 @@ class AmbienceCoordinator(DataUpdateCoordinator[p.State]):
 
     # -------------------------------------------------------------- commands
 
-    async def _exchange(self, frames: list[bytes]) -> p.State | None:
+    async def _write_and_wait(
+        self, client: BleakClient, frames: list[bytes]
+    ) -> p.State | None:
         """Write one command and return whatever state the device reports."""
-        async with self._lock:
-            client = await self._connect()
-            self._reassembler = p.Reassembler()
-            self._accumulated = None
-            self._reply = self.hass.loop.create_future()
+        self._reassembler = p.Reassembler()
+        self._accumulated = None
+        self._reply = self.hass.loop.create_future()
+        self.last_write = b"".join(frames)
+        self.last_write_at = dt_util.utcnow()
+        try:
+            for frame in frames:
+                await client.write_gatt_char(p.WRITE_UUID, frame, response=True)
             try:
-                for frame in frames:
-                    await client.write_gatt_char(p.WRITE_UUID, frame, response=True)
-                try:
-                    return await asyncio.wait_for(
-                        asyncio.shield(self._reply), REPLY_TIMEOUT
+                return await asyncio.wait_for(
+                    asyncio.shield(self._reply), REPLY_TIMEOUT
+                )
+            except asyncio.TimeoutError:
+                # Not necessarily a failure: only 0x03e9 and the time sync were
+                # ever seen to answer, so light and sound appear to be
+                # fire-and-forget. Return anything that did arrive.
+                _LOGGER.debug("no usable reply within %ss", REPLY_TIMEOUT)
+                return self._accumulated
+        finally:
+            self._reply = None
+
+    async def _exchange(
+        self,
+        frames: list[bytes] | None = None,
+        *,
+        build: Callable[[p.State | None], list[bytes]] | None = None,
+        handshake: bool = True,
+    ) -> p.State | None:
+        """Greet the device if the link is new, then send the command.
+
+        THE GREETING IS NOT OPTIONAL. Every capture of the vendor app opens the
+        same way: connect, write a time sync, receive the eight-message state
+        batch, and only then send whatever the user asked for. Version 0.3.1
+        skipped it - the poll happened to be a time sync, but a schedule edit
+        arrived on a freshly opened link with no handshake. The device
+        acknowledged the write at the GATT layer and then ignored it: the day
+        mask never moved off 0xff across four toggles and fifteen minutes of
+        watching, with nothing in the log, because nothing had failed.
+
+        `build` exists for the same reason. A schedule write is a
+        read-modify-write, and the bytes it starts from should be the ones the
+        greeting just returned, not whatever was cached from the last poll
+        half an hour ago.
+        """
+        async with self._lock:
+            client, fresh = await self._connect()
+            try:
+                current = self.data
+                if fresh and handshake:
+                    greeting = await self._write_and_wait(
+                        client, p.sync_time(dt_util.now())
                     )
-                except asyncio.TimeoutError:
-                    # Not necessarily a failure: only 0x03e9 and the time sync
-                    # were ever seen to answer, so light and sound appear to be
-                    # fire-and-forget. Return anything that did arrive.
-                    _LOGGER.debug("no usable reply within %ss", REPLY_TIMEOUT)
-                    return self._accumulated
+                    if _carries_state(greeting):
+                        current = _merge(current, greeting)
+                        self.async_set_updated_data(current)
+                payload = frames if frames is not None else build(current)
+                return await self._write_and_wait(client, payload)
             finally:
-                self._reply = None
                 self._schedule_disconnect()
 
-    async def _command(self, frames: list[bytes]) -> None:
+    async def _command(
+        self,
+        frames: list[bytes] | None = None,
+        *,
+        build: Callable[[p.State | None], list[bytes]] | None = None,
+    ) -> None:
         """Send a command, then refresh so entities reflect the device."""
-        reported = await self._exchange(frames)
+        reported = await self._exchange(frames, build=build)
         if reported is not None and reported.power is not None:
             self.async_set_updated_data(_merge(self.data, reported))
         else:
@@ -244,20 +300,22 @@ class AmbienceCoordinator(DataUpdateCoordinator[p.State]):
         edited, never constructed. Writing a guessed frame could overwrite a
         working schedule.
         """
-        current = self.data
-        raw = current.raw.get(p.CMD_POWER) if current else None
-        if not raw or len(raw) < 11:
-            raise HomeAssistantError(
-                "no schedule has been read from the device yet, so there is "
-                "nothing to safely modify - wait for a refresh and retry"
+        def build(current: p.State | None) -> list[bytes]:
+            raw = current.raw.get(p.CMD_POWER) if current else None
+            if not raw or len(raw) < 11:
+                raise HomeAssistantError(
+                    "no schedule has been read from the device yet, so there "
+                    "is nothing to safely modify - wait for a refresh and retry"
+                )
+            return p.schedule_from_raw(
+                raw,
+                days_mask=days_mask,
+                start_hour=start_hour,
+                end_hour=end_hour,
+                intensity=intensity,
             )
-        await self._command(p.schedule_from_raw(
-            raw,
-            days_mask=days_mask,
-            start_hour=start_hour,
-            end_hour=end_hour,
-            intensity=intensity,
-        ))
+
+        await self._command(build=build)
 
     # --------------------------------------------------------------- polling
 
@@ -268,7 +326,7 @@ class AmbienceCoordinator(DataUpdateCoordinator[p.State]):
         sends every time it connects, and the device answers with its whole
         state. Nothing else in the protocol reads without writing.
         """
-        state = await self._exchange(p.sync_time(dt_util.now()))
+        state = await self._exchange(p.sync_time(dt_util.now()), handshake=False)
         if state is None:
             raise UpdateFailed("device did not report state after a time sync")
         return _merge(self.data, state)
