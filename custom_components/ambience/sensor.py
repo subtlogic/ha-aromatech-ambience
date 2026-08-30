@@ -69,9 +69,9 @@ class AmbienceSchedule(AmbienceEntity, SensorEntity):
             "light_brightness": s.brightness,
             "firmware": s.firmware,
             # Diagnostics. A write the device silently ignores looks exactly
-            # like a write that was never sent, unless you can see the bytes.
+            # like a write that was never sent, unless you can see the bytes -
+            # and one "last write" slot is not enough, because the refresh
+            # that follows an unacknowledged command overwrites it.
             "raw_schedule": raw.hex(" ") if raw else None,
-            "last_write": c.last_write.hex(" ") if c.last_write else None,
-            "last_write_at": c.last_write_at,
-            "last_notify": c.last_notify.hex(" ") if c.last_notify else None,
+            "trace": list(c.trace),
         }

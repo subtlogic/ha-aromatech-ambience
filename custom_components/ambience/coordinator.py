@@ -13,8 +13,9 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from collections import deque
 from collections.abc import Callable
-from datetime import datetime, timedelta
+from datetime import timedelta
 
 from bleak import BleakClient
 from bleak_retry_connector import establish_connection
@@ -34,6 +35,7 @@ _LOGGER = logging.getLogger(__name__)
 # that imported names the deployed const.py did not have, and the integration
 # failed to load at all.
 CONNECT_ATTEMPTS = 3
+TRACE_FRAMES = 24        # roughly two full exchanges
 NOTIFY_SETTLE = 0.5      # let the link settle before writing the CCCD
 RETRY_BACKOFF = 1.0
 
@@ -65,12 +67,12 @@ class AmbienceCoordinator(DataUpdateCoordinator[p.State]):
         self._reply: asyncio.Future[p.State] | None = None
         self._reassembler = p.Reassembler()
         self._accumulated: p.State | None = None
-        # Surfaced as sensor attributes. Without these, "the device ignored the
-        # write" and "we never sent one" look identical from outside Home
-        # Assistant, and separating them took a packet capture and a night.
-        self.last_write: bytes | None = None
-        self.last_write_at: datetime | None = None
-        self.last_notify: bytes | None = None
+        # Surfaced as a sensor attribute. A single "last write" slot was not
+        # enough: a command that draws no state-carrying reply ends with
+        # async_request_refresh, whose own time sync overwrites the slot before
+        # anyone can read it. The command then looks like it never happened.
+        # A ring keeps the whole exchange - greeting, command, reply, refresh.
+        self.trace: deque[str] = deque(maxlen=TRACE_FRAMES)
 
     # ------------------------------------------------------------------ BLE
 
@@ -89,7 +91,7 @@ class AmbienceCoordinator(DataUpdateCoordinator[p.State]):
         something usable is present. If nothing usable turns up, the timeout in
         `_exchange` returns whatever accumulated rather than nothing.
         """
-        self.last_notify = bytes(data)
+        self._trace("RX", bytes(data))
         state = self._reassembler.feed(bytes(data))
         if state is None:
             return
@@ -100,6 +102,24 @@ class AmbienceCoordinator(DataUpdateCoordinator[p.State]):
             return
         if self._reply is not None and not self._reply.done():
             self._reply.set_result(self._accumulated)
+
+    @callback
+    def _trace(self, direction: str, data: bytes) -> None:
+        """Record one frame, tagged with the command it belongs to.
+
+        The command byte is what makes the trace readable at a glance: a time
+        sync and a schedule write are otherwise two similar-looking blobs, and
+        telling them apart is the entire question when an edit does not stick.
+        """
+        # Both directions put the command at bytes 4-5 of the FIRST fragment
+        # only: a write is `25 <frag> ff 01 <cmd:2> ...` and a reply is
+        # `<seq> <frag> <count:2> <cmd:2> ...`. Continuation fragments carry no
+        # command, so they are left untagged rather than mislabelled.
+        cmd = ""
+        if len(data) >= 6 and data[1] == 0x01:
+            cmd = f" cmd={(data[4] << 8) | data[5]:#06x}"
+        stamp = dt_util.utcnow().strftime("%H:%M:%S.%f")[:-3]
+        self.trace.append(f"{stamp} {direction}{cmd} {data.hex(' ')}")
 
     async def _connect(self) -> tuple[BleakClient, bool]:
         """Connect and enable notifications, retrying around GATT error 133.
@@ -195,10 +215,9 @@ class AmbienceCoordinator(DataUpdateCoordinator[p.State]):
         self._reassembler = p.Reassembler()
         self._accumulated = None
         self._reply = self.hass.loop.create_future()
-        self.last_write = b"".join(frames)
-        self.last_write_at = dt_util.utcnow()
         try:
             for frame in frames:
+                self._trace("TX", frame)
                 await client.write_gatt_char(p.WRITE_UUID, frame, response=True)
             try:
                 return await asyncio.wait_for(
