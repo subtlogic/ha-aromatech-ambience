@@ -35,7 +35,11 @@ class AmbienceScheduleTime(AmbienceEntity, TimeEntity):
     def __init__(self, coordinator: AmbienceCoordinator, which: str) -> None:
         super().__init__(coordinator, f"schedule_{which}")
         self._which = which
-        self._attr_name = "Schedule start" if which == "start" else "Schedule end"
+        # "from"/"to" rather than "start"/"end" so they sort in reading order.
+        # Home Assistant lists entities alphabetically, and "Schedule end"
+        # sorts above "Schedule start", which put the window backwards on the
+        # device page.
+        self._attr_name = "Schedule from" if which == "start" else "Schedule to"
         self._attr_icon = (
             "mdi:clock-start" if which == "start" else "mdi:clock-end"
         )

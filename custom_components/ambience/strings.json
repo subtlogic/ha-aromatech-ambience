@@ -46,10 +46,10 @@
     },
     "time": {
       "schedule_start": {
-        "name": "Schedule start"
+        "name": "Schedule from"
       },
       "schedule_end": {
-        "name": "Schedule end"
+        "name": "Schedule to"
       }
     }
   },
