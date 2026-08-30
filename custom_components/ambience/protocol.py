@@ -57,12 +57,25 @@ LIGHT_MODES = ["off", "warm", "cool", "flow", "custom"]
 POWER_ON_ARG = 0x00
 POWER_OFF_ARG = 0x01
 
+# The shape of a schedule write, taken from the app rather than from the
+# device's reports. See `schedule_from_raw` for why the two differ.
+SCHEDULE_WRITE_HEAD = b"\x01\x01\x01\x01\x01"
+SCHEDULE_WRITE_LEN = 11    # what the app actually puts on the wire
+SCHEDULE_DECLARED_LEN = 15  # what the app claims in the length byte
+
 
 # --------------------------------------------------------------- encoding
 
-def encode(cmd: int, payload: bytes) -> list[bytes]:
-    """Build the ATT writes for one command, fragmenting to the MTU."""
-    body = DIR_CMD + cmd.to_bytes(2, "big") + CONST_AF + bytes([len(payload)]) + payload
+def encode(cmd: int, payload: bytes, declared_len: int | None = None) -> list[bytes]:
+    """Build the ATT writes for one command, fragmenting to the MTU.
+
+    `declared_len` overrides the length byte. Only the schedule needs it, and
+    only because the app itself is inconsistent there - see the note in
+    `schedule_from_raw`.
+    """
+    body = (DIR_CMD + cmd.to_bytes(2, "big") + CONST_AF
+            + bytes([len(payload) if declared_len is None else declared_len])
+            + payload)
     out: list[bytes] = []
     pos, frag = 0, 1
     while True:
@@ -106,19 +119,39 @@ def schedule_from_raw(raw: bytes, *, days_mask: int | None = None,
                       intensity: int | None = None) -> list[bytes]:
     """Rewrite a schedule frame, changing only the named fields.
 
-    READ-MODIFY-WRITE, and deliberately so. The 15-byte payload opens with
-    `01 01 01 01 01` and nothing in any capture explains those five bytes. The
-    app has a `+` for additional schedule slots, so one of them is plausibly a
-    slot index. Building a frame from scratch would mean guessing them.
+    Read-modify-write on the schedule VALUES, but never on the frame's head or
+    tail, and that distinction is the whole point of this function.
 
-    Instead the caller passes the payload the DEVICE last reported, and only
-    the fields we understand are overwritten. Every unknown byte is returned
-    exactly as it arrived, so the worst case is writing back what was already
-    there.
+    The device reports 15 bytes:
+
+        01  01  00  01 01  ff  06 00  14 00  01  00 00 00 00
+        ^   ^   ^                                 ^^^^^^^^^^^
+        |   |   +-- run code: 0 idle, 2 running, 3 stopped     tail, always zero
+        |   +------ current power: 1 on, 0 off
+        +---------- constant
+
+    Bytes 1 and 2 are STATUS. The app never writes them - every schedule write
+    in the captures opens with a flat `01 01 01 01 01` regardless of what the
+    device last reported. An earlier version of this function echoed the whole
+    frame back verbatim, which meant writing the device's own status codes into
+    a command: a reported `01 00 03 ...` went out as a write claiming power off
+    and run code 3. The device took that badly - the vendor app lost the
+    schedule entirely and edits stopped sticking.
+
+    The app is also inconsistent about length: it declares 15 and then sends
+    only 11 bytes, stopping exactly at the 20-byte MTU rather than continuing
+    into a second fragment. The four zero tail bytes are never transmitted. We
+    match that byte for byte instead of being tidier than the app, because the
+    device's parser is the only opinion that counts here.
+
+    What is genuinely read-modify-write: the mask, hours, and intensity that
+    are not being changed carry over from the device's own report, so setting
+    one field cannot clobber another.
     """
     if len(raw) < 11:
         raise ValueError(f"schedule payload too short to edit: {len(raw)} bytes")
-    out = bytearray(raw)
+    out = bytearray(raw[:SCHEDULE_WRITE_LEN])
+    out[0:5] = SCHEDULE_WRITE_HEAD
     if days_mask is not None:
         out[5] = days_mask & 0xFF
     if start_hour is not None:
@@ -127,7 +160,7 @@ def schedule_from_raw(raw: bytes, *, days_mask: int | None = None,
         out[8:10] = int(end_hour).to_bytes(2, "little")
     if intensity is not None:
         out[10] = int(intensity) & 0xFF
-    return encode(CMD_POWER, bytes(out))
+    return encode(CMD_POWER, bytes(out), declared_len=SCHEDULE_DECLARED_LEN)
 
 
 # --------------------------------------------------------------- decoding
@@ -189,6 +222,24 @@ def _apply(state: State, cmd: int, payload: bytes) -> None:
         state.name = payload.decode("ascii", "replace").strip("\x00 ")
 
 
+def _truncated_at_mtu(body: bytes, pos: int, length: int) -> bool:
+    """Is a short final message the device stopping at the MTU, or a gap?
+
+    The device truncates rather than fragments, exactly as the app does when it
+    writes a schedule: it declares 15 bytes, fills the 20-byte ATT payload, and
+    sends nothing more. Refusing to parse those replies is why a schedule edit
+    used to show no confirmation and then snap back on the next poll.
+
+    A truncation is only believable when the buffer ends flush against a
+    fragment boundary AND this is the last message announced. Anything else is
+    a batch still in flight, and returning early there would publish a
+    half-read state.
+    """
+    body_per_fragment = MAX_ATT - 2
+    ends_at_boundary = len(body) % body_per_fragment == 0
+    return ends_at_boundary and pos + 5 + length > len(body) >= pos + 5
+
+
 def parse_batch(body: bytes) -> State | None:
     """Parse a reassembled reply body into state.
 
@@ -205,7 +256,7 @@ def parse_batch(body: bytes) -> State | None:
         cmd = int.from_bytes(body[pos:pos + 2], "big")
         length = body[pos + 4]
         payload = body[pos + 5: pos + 5 + length]
-        if len(payload) < length:
+        if len(payload) < length and not _truncated_at_mtu(body, pos, length):
             break
         _apply(state, cmd, payload)
         pos += 5 + length
@@ -250,7 +301,10 @@ class Reassembler:
         while pos + 5 <= len(body) and seen < count:
             length = body[pos + 4]
             if pos + 5 + length > len(body):
-                return None
+                if not _truncated_at_mtu(body, pos, length):
+                    return None
+                seen += 1
+                break
             pos += 5 + length
             seen += 1
         if seen < count:
