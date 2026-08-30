@@ -27,6 +27,27 @@
       },
       "schedule_enabled": {
         "name": "Schedule enabled"
+      },
+      "day_mon": {
+        "name": "Schedule 1 Mon"
+      },
+      "day_tue": {
+        "name": "Schedule 2 Tue"
+      },
+      "day_wed": {
+        "name": "Schedule 3 Wed"
+      },
+      "day_thu": {
+        "name": "Schedule 4 Thu"
+      },
+      "day_fri": {
+        "name": "Schedule 5 Fri"
+      },
+      "day_sat": {
+        "name": "Schedule 6 Sat"
+      },
+      "day_sun": {
+        "name": "Schedule 7 Sun"
       }
     },
     "sensor": {

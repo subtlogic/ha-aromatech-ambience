@@ -13,16 +13,38 @@ from .const import DOMAIN
 from .coordinator import AmbienceCoordinator
 from .entity import AmbienceEntity
 
+# Bit position in the schedule day mask -> (ordering index, short label).
+#
+# Bit 0 = Sunday is INFERRED, not proven. It is the only assignment consistent
+# with the three masks ever observed - 0x7f and 0xff for all days, 0x82 while
+# the vendor app showed Monday alone - but a single Monday-only sample cannot
+# rule out an off-by-one. Toggling one day and reading the schedule sensor back
+# settles it in one action.
+#
+# Names carry an index because Home Assistant sorts entities alphabetically,
+# which would otherwise list these as Fri, Mon, Sat, Sun, Thu, Tue, Wed.
+DAY_BITS = {
+    1: (1, "Mon"),
+    2: (2, "Tue"),
+    3: (3, "Wed"),
+    4: (4, "Thu"),
+    5: (5, "Fri"),
+    6: (6, "Sat"),
+    0: (7, "Sun"),
+}
+
 
 async def async_setup_entry(
     hass: HomeAssistant, entry: ConfigEntry, async_add_entities: AddEntitiesCallback
 ) -> None:
     coordinator: AmbienceCoordinator = hass.data[DOMAIN][entry.entry_id]
-    async_add_entities([
+    entities: list[SwitchEntity] = [
         AmbiencePower(coordinator),
         AmbienceSound(coordinator),
         AmbienceScheduleEnabled(coordinator),
-    ])
+    ]
+    entities += [AmbienceDay(coordinator, bit) for bit in DAY_BITS]
+    async_add_entities(entities)
 
 
 class AmbiencePower(AmbienceEntity, SwitchEntity):
@@ -109,6 +131,48 @@ class AmbienceScheduleEnabled(AmbienceEntity, SwitchEntity):
             raise HomeAssistantError("no schedule read from the device yet")
         mask = (state.days_mask | 0x80) if enabled else (state.days_mask & 0x7F)
         await self.coordinator.async_set_schedule(days_mask=mask)
+
+    async def async_turn_on(self, **kwargs: Any) -> None:
+        await self._set(True)
+
+    async def async_turn_off(self, **kwargs: Any) -> None:
+        await self._set(False)
+
+
+class AmbienceDay(AmbienceEntity, SwitchEntity):
+    """One weekday of the schedule - a single bit of the day mask.
+
+    Flips only its own bit and hands the whole mask back, so the other days and
+    the enable flag in bit 7 are preserved regardless of what they were.
+    """
+
+    def __init__(self, coordinator: AmbienceCoordinator, bit: int) -> None:
+        order, label = DAY_BITS[bit]
+        super().__init__(coordinator, f"day_{label.lower()}")
+        self._bit = bit
+        self._attr_name = f"Schedule {order} {label}"
+        self._attr_entity_registry_enabled_default = True
+
+    @property
+    def is_on(self) -> bool | None:
+        state = self.coordinator.data
+        if state is None or state.days_mask is None:
+            return None
+        return bool(state.days_mask & (1 << self._bit))
+
+    @property
+    def icon(self) -> str:
+        if self.is_on is None:
+            return "mdi:calendar-question"
+        return "mdi:calendar-check" if self.is_on else "mdi:calendar-blank"
+
+    async def _set(self, on: bool) -> None:
+        state = self.coordinator.data
+        if state is None or state.days_mask is None:
+            raise HomeAssistantError("no schedule read from the device yet")
+        mask = state.days_mask
+        mask = (mask | (1 << self._bit)) if on else (mask & ~(1 << self._bit))
+        await self.coordinator.async_set_schedule(days_mask=mask & 0xFF)
 
     async def async_turn_on(self, **kwargs: Any) -> None:
         await self._set(True)
