@@ -29,7 +29,18 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         entry.data[CONF_ADDRESS],
         entry.options.get(CONF_SCAN_INTERVAL, SCAN_INTERVAL_SECONDS),
     )
-    await coordinator.async_config_entry_first_refresh()
+    # Deliberately NOT async_config_entry_first_refresh. That raises
+    # ConfigEntryNotReady when the first connect fails, which takes the whole
+    # integration down - and this device is documented as advertising
+    # intermittently, so a miss at boot is expected rather than exceptional.
+    # On a cold start the ESPHome proxies are coming up at the same moment, so
+    # the first attempt is the one most likely to miss.
+    #
+    # async_refresh does not raise. Setup succeeds, the entities exist, and
+    # CoordinatorEntity reports them unavailable until the first successful
+    # poll fills them in - honest about the state instead of pretending the
+    # integration is not installed. Recovery costs one scan interval.
+    await coordinator.async_refresh()
 
     hass.data.setdefault(DOMAIN, {})[entry.entry_id] = coordinator
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
