@@ -12,10 +12,23 @@ from typing import Any
 
 import voluptuous as vol
 from homeassistant.components import bluetooth
-from homeassistant.config_entries import ConfigFlow, ConfigFlowResult
+from homeassistant.config_entries import (
+    ConfigEntry,
+    ConfigFlow,
+    ConfigFlowResult,
+    OptionsFlow,
+)
 from homeassistant.const import CONF_ADDRESS
 
-from .const import DOMAIN
+from homeassistant.core import callback
+
+from .const import (
+    CONF_SCAN_INTERVAL,
+    DOMAIN,
+    MAX_SCAN_INTERVAL,
+    MIN_SCAN_INTERVAL,
+    SCAN_INTERVAL_SECONDS,
+)
 
 NAME_PREFIX = "Ambience"
 
@@ -28,6 +41,11 @@ class AmbienceConfigFlow(ConfigFlow, domain=DOMAIN):
     """Adopt an Ambience, by discovery or by picking it from a list."""
 
     VERSION = 1
+
+    @staticmethod
+    @callback
+    def async_get_options_flow(entry: ConfigEntry) -> AmbienceOptionsFlow:
+        return AmbienceOptionsFlow()
 
     def __init__(self) -> None:
         self._discovered: bluetooth.BluetoothServiceInfoBleak | None = None
@@ -82,4 +100,34 @@ class AmbienceConfigFlow(ConfigFlow, domain=DOMAIN):
         return self.async_show_form(
             step_id="user",
             data_schema=vol.Schema({vol.Required(CONF_ADDRESS): vol.In(devices)}),
+        )
+
+
+class AmbienceOptionsFlow(OptionsFlow):
+    """Tune the heartbeat.
+
+    Each poll connects, writes a time sync and disconnects, and the device
+    replies with its whole state - so this interval decides how quickly a
+    change made in the vendor app, or at the unit itself, shows up here. It
+    also decides how often one of the proxy's three connection slots is in
+    use, which matters when that proxy also serves other devices.
+    """
+
+    async def async_step_init(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        if user_input is not None:
+            return self.async_create_entry(data=user_input)
+
+        current = self.config_entry.options.get(
+            CONF_SCAN_INTERVAL, SCAN_INTERVAL_SECONDS
+        )
+        return self.async_show_form(
+            step_id="init",
+            data_schema=vol.Schema({
+                vol.Required(CONF_SCAN_INTERVAL, default=current): vol.All(
+                    vol.Coerce(int),
+                    vol.Range(min=MIN_SCAN_INTERVAL, max=MAX_SCAN_INTERVAL),
+                ),
+            }),
         )

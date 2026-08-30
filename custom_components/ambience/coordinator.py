@@ -19,6 +19,7 @@ from bleak import BleakClient
 from bleak_retry_connector import establish_connection
 from homeassistant.components import bluetooth
 from homeassistant.core import HomeAssistant, callback
+from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 from homeassistant.util import dt as dt_util
 
@@ -39,12 +40,22 @@ RETRY_BACKOFF = 1.0
 class AmbienceCoordinator(DataUpdateCoordinator[p.State]):
     """Owns the connection and the last known device state."""
 
-    def __init__(self, hass: HomeAssistant, address: str) -> None:
+    def __init__(
+        self,
+        hass: HomeAssistant,
+        address: str,
+        scan_interval: int = SCAN_INTERVAL_SECONDS,
+    ) -> None:
         super().__init__(
             hass,
             _LOGGER,
             name=f"Ambience {address}",
-            update_interval=timedelta(seconds=SCAN_INTERVAL_SECONDS),
+            # The heartbeat. Each tick connects, sends a time sync and
+            # disconnects, and the device answers with its whole state - so
+            # this is also how a change made in the vendor app, or at the unit
+            # itself, gets noticed. Shorter means fresher, at the cost of
+            # occupying one of the proxy's three connection slots more often.
+            update_interval=timedelta(seconds=scan_interval),
         )
         self.address = address
         self._lock = asyncio.Lock()
@@ -204,9 +215,49 @@ class AmbienceCoordinator(DataUpdateCoordinator[p.State]):
     async def async_set_sound(self, on: bool) -> None:
         await self._command(p.sound(on))
 
-    async def async_set_light(self, mode: int) -> None:
-        rgb = self.data.rgb if self.data and self.data.rgb else (0, 0, 0)
-        await self._command(p.light(mode, rgb=rgb))
+    async def async_set_light(
+        self,
+        mode: int,
+        rgb: tuple[int, int, int] | None = None,
+        brightness: int | None = None,
+    ) -> None:
+        current = self.data
+        if rgb is None:
+            rgb = current.rgb if current and current.rgb else (0, 0, 0)
+        if brightness is None:
+            brightness = current.brightness if current and current.brightness else 0x64
+        await self._command(p.light(mode, rgb=rgb, brightness=brightness))
+
+    async def async_set_schedule(
+        self,
+        *,
+        days_mask: int | None = None,
+        start_hour: int | None = None,
+        end_hour: int | None = None,
+        intensity: int | None = None,
+    ) -> None:
+        """Change one schedule field, preserving everything else byte for byte.
+
+        Refuses to act without a schedule frame from the device. The payload
+        opens with five bytes nothing has explained - plausibly a slot index,
+        given the app offers multiple schedules - so a frame is only ever
+        edited, never constructed. Writing a guessed frame could overwrite a
+        working schedule.
+        """
+        current = self.data
+        raw = current.raw.get(p.CMD_POWER) if current else None
+        if not raw or len(raw) < 11:
+            raise HomeAssistantError(
+                "no schedule has been read from the device yet, so there is "
+                "nothing to safely modify - wait for a refresh and retry"
+            )
+        await self._command(p.schedule_from_raw(
+            raw,
+            days_mask=days_mask,
+            start_hour=start_hour,
+            end_hour=end_hour,
+            intensity=intensity,
+        ))
 
     # --------------------------------------------------------------- polling
 

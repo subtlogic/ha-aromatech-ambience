@@ -6,6 +6,7 @@ from typing import Any
 from homeassistant.components.switch import SwitchEntity
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
+from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
 from .const import DOMAIN
@@ -17,7 +18,11 @@ async def async_setup_entry(
     hass: HomeAssistant, entry: ConfigEntry, async_add_entities: AddEntitiesCallback
 ) -> None:
     coordinator: AmbienceCoordinator = hass.data[DOMAIN][entry.entry_id]
-    async_add_entities([AmbiencePower(coordinator), AmbienceSound(coordinator)])
+    async_add_entities([
+        AmbiencePower(coordinator),
+        AmbienceSound(coordinator),
+        AmbienceScheduleEnabled(coordinator),
+    ])
 
 
 class AmbiencePower(AmbienceEntity, SwitchEntity):
@@ -72,3 +77,41 @@ class AmbienceSound(AmbienceEntity, SwitchEntity):
 
     async def async_turn_off(self, **kwargs: Any) -> None:
         await self.coordinator.async_set_sound(False)
+
+
+class AmbienceScheduleEnabled(AmbienceEntity, SwitchEntity):
+    """Whether the stored schedule is active.
+
+    This is bit 7 of the schedule's day mask. That reading is inference from
+    three observed masks rather than proof, so this switch flips only that bit
+    and leaves every other byte of the frame untouched.
+    """
+
+    _attr_name = "Schedule enabled"
+
+    def __init__(self, coordinator: AmbienceCoordinator) -> None:
+        super().__init__(coordinator, "schedule_enabled")
+
+    @property
+    def is_on(self) -> bool | None:
+        state = self.coordinator.data
+        return None if state is None else state.schedule_enabled
+
+    @property
+    def icon(self) -> str:
+        if self.is_on is None:
+            return "mdi:calendar-question"
+        return "mdi:calendar-check" if self.is_on else "mdi:calendar-remove"
+
+    async def _set(self, enabled: bool) -> None:
+        state = self.coordinator.data
+        if state is None or state.days_mask is None:
+            raise HomeAssistantError("no schedule read from the device yet")
+        mask = (state.days_mask | 0x80) if enabled else (state.days_mask & 0x7F)
+        await self.coordinator.async_set_schedule(days_mask=mask)
+
+    async def async_turn_on(self, **kwargs: Any) -> None:
+        await self._set(True)
+
+    async def async_turn_off(self, **kwargs: Any) -> None:
+        await self._set(False)

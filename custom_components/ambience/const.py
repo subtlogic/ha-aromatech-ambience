@@ -21,3 +21,8 @@ REPLY_TIMEOUT = 5.0
 DISCONNECT_DELAY = 20.0
 
 SCAN_INTERVAL_SECONDS = 300
+
+# Options-flow key for the heartbeat interval, in seconds.
+CONF_SCAN_INTERVAL = "scan_interval"
+MIN_SCAN_INTERVAL = 30
+MAX_SCAN_INTERVAL = 3600

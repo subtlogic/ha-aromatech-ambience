@@ -19,23 +19,49 @@
   },
   "entity": {
     "switch": {
-      "power": { "name": "Diffuser" },
-      "sound": { "name": "Sound" }
-    },
-    "select": {
-      "light": {
-        "name": "Light",
-        "state": {
-          "off": "Off",
-          "warm": "Warm",
-          "cool": "Cool",
-          "flow": "Flow",
-          "custom": "Custom"
-        }
+      "power": {
+        "name": "Diffuser"
+      },
+      "sound": {
+        "name": "Sound"
+      },
+      "schedule_enabled": {
+        "name": "Schedule enabled"
       }
     },
     "sensor": {
-      "schedule": { "name": "Schedule" }
+      "schedule": {
+        "name": "Schedule"
+      }
+    },
+    "light": {
+      "light": {
+        "name": "Light"
+      }
+    },
+    "number": {
+      "intensity": {
+        "name": "Intensity"
+      }
+    },
+    "time": {
+      "schedule_start": {
+        "name": "Schedule start"
+      },
+      "schedule_end": {
+        "name": "Schedule end"
+      }
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Ambience options",
+        "data": {
+          "scan_interval": "Heartbeat interval (seconds)"
+        },
+        "description": "How often to poll the diffuser. Each poll briefly uses one of the Bluetooth proxy's three connection slots, so shorter means fresher state at the cost of more contention."
+      }
     }
   }
 }

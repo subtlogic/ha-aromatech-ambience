@@ -100,6 +100,36 @@ def sync_time(now: datetime) -> list[bytes]:
     ]))
 
 
+def schedule_from_raw(raw: bytes, *, days_mask: int | None = None,
+                      start_hour: int | None = None,
+                      end_hour: int | None = None,
+                      intensity: int | None = None) -> list[bytes]:
+    """Rewrite a schedule frame, changing only the named fields.
+
+    READ-MODIFY-WRITE, and deliberately so. The 15-byte payload opens with
+    `01 01 01 01 01` and nothing in any capture explains those five bytes. The
+    app has a `+` for additional schedule slots, so one of them is plausibly a
+    slot index. Building a frame from scratch would mean guessing them.
+
+    Instead the caller passes the payload the DEVICE last reported, and only
+    the fields we understand are overwritten. Every unknown byte is returned
+    exactly as it arrived, so the worst case is writing back what was already
+    there.
+    """
+    if len(raw) < 11:
+        raise ValueError(f"schedule payload too short to edit: {len(raw)} bytes")
+    out = bytearray(raw)
+    if days_mask is not None:
+        out[5] = days_mask & 0xFF
+    if start_hour is not None:
+        out[6:8] = int(start_hour).to_bytes(2, "little")
+    if end_hour is not None:
+        out[8:10] = int(end_hour).to_bytes(2, "little")
+    if intensity is not None:
+        out[10] = int(intensity) & 0xFF
+    return encode(CMD_POWER, bytes(out))
+
+
 # --------------------------------------------------------------- decoding
 
 @dataclass
