@@ -30,6 +30,7 @@ from .coordinator import AmbienceCoordinator
 from .entity import AmbienceEntity
 
 MODE_OFF = 0
+MODE_WARM = 1
 MODE_CUSTOM = 4
 # Index into the protocol's mode byte. Off and Custom are handled by the light
 # itself, so only the fixed looks appear as effects.
@@ -105,7 +106,9 @@ class AmbienceLight(AmbienceEntity, LightEntity):
         elif state is not None and state.light_mode not in (None, MODE_OFF):
             mode = state.light_mode
         else:
-            mode = MODE_CUSTOM
+            # Off reports mode 0 and often stores RGB (0, 0, 0). A bare On
+            # must choose a visible preset rather than Custom black.
+            mode = MODE_WARM
 
         await self.coordinator.async_set_light(
             mode, rgb=tuple(rgb), brightness=max(1, min(DEVICE_MAX, brightness))
