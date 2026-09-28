@@ -38,6 +38,7 @@ CONNECT_ATTEMPTS = 3
 TRACE_FRAMES = 24        # roughly two full exchanges
 NOTIFY_SETTLE = 0.5      # let the link settle before writing the CCCD
 RETRY_BACKOFF = 1.0
+SCHEDULE_WRITE_ATTEMPTS = 3
 
 
 class AmbienceCoordinator(DataUpdateCoordinator[p.State]):
@@ -349,7 +350,7 @@ class AmbienceCoordinator(DataUpdateCoordinator[p.State]):
                 getattr(state, name) == value for name, value in requested.items()
             )
 
-        for attempt in range(2):
+        for attempt in range(SCHEDULE_WRITE_ATTEMPTS):
             await self._command(build=build)
             # An ACK or service success only proves transport. Confirm the
             # value in a fresh device report before telling HA it was saved.
@@ -357,7 +358,7 @@ class AmbienceCoordinator(DataUpdateCoordinator[p.State]):
                 await self.async_request_refresh()
                 if matches_report():
                     return
-            if attempt == 0:
+            if attempt < SCHEDULE_WRITE_ATTEMPTS - 1:
                 await asyncio.sleep(RETRY_BACKOFF)
 
         actual = {

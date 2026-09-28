@@ -101,14 +101,22 @@ class ScheduleReadbackTest(unittest.TestCase):
         self.assertEqual(len(coordinator.commands), 2)
         self.assertEqual(coordinator.commands[0][1], bytes.fromhex("25 02 00 00 00 00"))
 
-    def test_raises_when_both_device_reports_keep_old_value(self):
-        coordinator = fake_coordinator([False, False])
+    def test_third_attempt_can_confirm_value(self):
+        coordinator = fake_coordinator([False, False, True])
+
+        asyncio.run(coordinator.async_set_schedule(intensity=3))
+
+        self.assertEqual(coordinator.data.intensity, 3)
+        self.assertEqual(len(coordinator.commands), 3)
+
+    def test_raises_when_all_device_reports_keep_old_value(self):
+        coordinator = fake_coordinator([False, False, False])
 
         with self.assertRaisesRegex(Exception, "did not retain schedule change"):
             asyncio.run(coordinator.async_set_schedule(intensity=3))
 
         self.assertEqual(coordinator.data.intensity, 2)
-        self.assertEqual(len(coordinator.commands), 2)
+        self.assertEqual(len(coordinator.commands), 3)
 
 
 if __name__ == "__main__":
