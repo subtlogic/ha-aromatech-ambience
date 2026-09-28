@@ -60,8 +60,8 @@ POWER_OFF_ARG = 0x01
 # The shape of a schedule write, taken from the app rather than from the
 # device's reports. See `schedule_from_raw` for why the two differ.
 SCHEDULE_WRITE_HEAD = b"\x01\x01\x01\x01\x01"
-SCHEDULE_WRITE_LEN = 11    # what the app actually puts on the wire
-SCHEDULE_DECLARED_LEN = 15  # what the app claims in the length byte
+SCHEDULE_VALUES_LEN = 11
+SCHEDULE_WRITE_TAIL = b"\x00\x00\x00\x00"
 
 
 # --------------------------------------------------------------- encoding
@@ -138,11 +138,11 @@ def schedule_from_raw(raw: bytes, *, days_mask: int | None = None,
     and run code 3. The device took that badly - the vendor app lost the
     schedule entirely and edits stopped sticking.
 
-    The app is also inconsistent about length: it declares 15 and then sends
-    only 11 bytes, stopping exactly at the 20-byte MTU rather than continuing
-    into a second fragment. The four zero tail bytes are never transmitted. We
-    match that byte for byte instead of being tidier than the app, because the
-    device's parser is the only opinion that counts here.
+    The app declares 15 bytes. The first ATT write holds the 11 schedule
+    values; a second `25 02 00 00 00 00` write completes the four-byte zero
+    tail. A first-fragment-only write is ignored by the device. The earlier
+    implementation omitted this continuation, explaining why edits returned
+    successfully at the service layer but reverted on device readback.
 
     What is genuinely read-modify-write: the mask, hours, and intensity that
     are not being changed carry over from the device's own report, so setting
@@ -150,7 +150,7 @@ def schedule_from_raw(raw: bytes, *, days_mask: int | None = None,
     """
     if len(raw) < 11:
         raise ValueError(f"schedule payload too short to edit: {len(raw)} bytes")
-    out = bytearray(raw[:SCHEDULE_WRITE_LEN])
+    out = bytearray(raw[:SCHEDULE_VALUES_LEN] + SCHEDULE_WRITE_TAIL)
     out[0:5] = SCHEDULE_WRITE_HEAD
     if days_mask is not None:
         out[5] = days_mask & 0xFF
@@ -160,7 +160,7 @@ def schedule_from_raw(raw: bytes, *, days_mask: int | None = None,
         out[8:10] = int(end_hour).to_bytes(2, "little")
     if intensity is not None:
         out[10] = int(intensity) & 0xFF
-    return encode(CMD_POWER, bytes(out), declared_len=SCHEDULE_DECLARED_LEN)
+    return encode(CMD_POWER, bytes(out))
 
 
 # --------------------------------------------------------------- decoding

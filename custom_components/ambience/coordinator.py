@@ -279,7 +279,7 @@ class AmbienceCoordinator(DataUpdateCoordinator[p.State]):
     ) -> None:
         """Send a command, then refresh so entities reflect the device."""
         reported = await self._exchange(frames, build=build)
-        if reported is not None and reported.power is not None:
+        if _carries_state(reported):
             self.async_set_updated_data(_merge(self.data, reported))
         else:
             await self.async_request_refresh()
@@ -334,7 +334,40 @@ class AmbienceCoordinator(DataUpdateCoordinator[p.State]):
                 intensity=intensity,
             )
 
-        await self._command(build=build)
+        requested = {
+            name: value for name, value in (
+                ("days_mask", days_mask),
+                ("start_hour", start_hour),
+                ("end_hour", end_hour),
+                ("intensity", intensity),
+            ) if value is not None
+        }
+
+        def matches_report() -> bool:
+            state = self.data
+            return state is not None and all(
+                getattr(state, name) == value for name, value in requested.items()
+            )
+
+        for attempt in range(2):
+            await self._command(build=build)
+            # An ACK or service success only proves transport. Confirm the
+            # value in a fresh device report before telling HA it was saved.
+            if matches_report():
+                await self.async_request_refresh()
+                if matches_report():
+                    return
+            if attempt == 0:
+                await asyncio.sleep(RETRY_BACKOFF)
+
+        actual = {
+            name: getattr(self.data, name) if self.data else None
+            for name in requested
+        }
+        raise HomeAssistantError(
+            f"Ambience did not retain schedule change: requested {requested}, "
+            f"device reported {actual}"
+        )
 
     # --------------------------------------------------------------- polling
 
