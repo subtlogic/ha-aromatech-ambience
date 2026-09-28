@@ -32,9 +32,9 @@ from .entity import AmbienceEntity
 MODE_OFF = 0
 MODE_WARM = 1
 MODE_CUSTOM = 4
-# Index into the protocol's mode byte. Off and Custom are handled by the light
-# itself, so only the fixed looks appear as effects.
-EFFECTS = {"Warm": 1, "Cool": 2, "Flow": 3}
+# Index into the protocol's mode byte. Off is selectable beside the fixed looks;
+# Custom is selected when the user chooses an RGB color.
+EFFECTS = {"Warm": 1, "Cool": 2, "Flow": 3, "Off": 0}
 EFFECT_BY_MODE = {v: k for k, v in EFFECTS.items()}
 
 # Device brightness is 0-100; Home Assistant uses 0-255.
