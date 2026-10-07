@@ -85,6 +85,22 @@ normal; the integration retries on the next heartbeat.
 - The weekday bit order (bit 0 = Sunday) is inferred. Please open an issue if
   the day switches do not match the vendor app.
 
+## Roadmap
+
+Planned, in no particular order and without dates:
+
+- **Scent remaining.** Estimate how much oil is left from the device's spray
+  timing and your schedule, calibrated by weighing the bottle, with a
+  days-remaining sensor and a "scent low" alert you can turn into a phone
+  notification (a blueprint will be included).
+- **Confirm the weekday mapping.** Bit 0 = Sunday is inferred from three
+  observed values; a report from another unit would settle it.
+- **Multiple schedule slots.** The vendor app suggests the device holds more
+  than one; only the first is exposed today.
+
+Ideas and reports are welcome in
+[issues](https://github.com/subtlogic/ha-aromatech-ambience/issues).
+
 ## Development
 
 ```
