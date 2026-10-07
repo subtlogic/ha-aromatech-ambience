@@ -7,6 +7,8 @@ Bluetooth proxies.
 > Not affiliated with or endorsed by AromaTech. "AromaTech" and "Ambience" are
 > used only to identify the supported hardware.
 
+<img src="https://raw.githubusercontent.com/subtlogic/ha-aromatech-ambience/main/examples/images/dashboard-popup.png" alt="AromaTech Ambience dashboard card" width="320">
+
 ## Why a separate integration
 
 The community
@@ -32,6 +34,9 @@ framing, so it needs its own implementation. The full decode is in
 Schedule edits are confirmed against a fresh report from the device and retried
 up to three times. If the device still holds the old value, the action fails
 with an error rather than reporting success.
+
+See [examples](examples/README.md) for the dashboard card above, the device
+page, and ready-to-paste automation ideas.
 
 ## Installation
 
