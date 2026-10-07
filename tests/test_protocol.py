@@ -6,7 +6,7 @@ import sys
 import unittest
 
 
-SOURCE = Path(__file__).parents[1] / "custom_components/ambience/protocol.py"
+SOURCE = Path(__file__).parents[1] / "custom_components/aromatech_ambience/protocol.py"
 SPEC = importlib.util.spec_from_file_location("ambience_protocol_under_test", SOURCE)
 protocol = importlib.util.module_from_spec(SPEC)
 sys.modules[SPEC.name] = protocol

@@ -1,6 +1,6 @@
 """Constants for the AromaTech Ambience integration."""
 
-DOMAIN = "ambience"
+DOMAIN = "aromatech_ambience"
 
 CONF_ADDRESS = "address"
 

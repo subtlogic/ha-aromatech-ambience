@@ -68,7 +68,7 @@ class AmbienceCoordinator(DataUpdateCoordinator[p.State]):
         self._reply: asyncio.Future[p.State] | None = None
         self._reassembler = p.Reassembler()
         self._accumulated: p.State | None = None
-        # Surfaced as a sensor attribute. A single "last write" slot was not
+        # Surfaced in the diagnostics download. A single "last write" slot was not
         # enough: a command that draws no state-carrying reply ends with
         # async_request_refresh, whose own time sync overwrites the slot before
         # anyone can read it. The command then looks like it never happened.

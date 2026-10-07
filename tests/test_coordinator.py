@@ -10,7 +10,7 @@ import types
 import unittest
 
 
-ROOT = Path(__file__).parents[1] / "custom_components/ambience"
+ROOT = Path(__file__).parents[1] / "custom_components/aromatech_ambience"
 
 
 def module(name, **attrs):
@@ -38,15 +38,15 @@ class DataUpdateCoordinator:
 module("homeassistant.helpers.update_coordinator", DataUpdateCoordinator=DataUpdateCoordinator,
        UpdateFailed=type("UpdateFailed", (Exception,), {}))
 module("homeassistant.util", dt=types.SimpleNamespace(now=datetime.now, utcnow=datetime.utcnow))
-module("ambience", __path__=[str(ROOT)])
-module("ambience.const", DISCONNECT_DELAY=20, REPLY_TIMEOUT=5,
+module("aromatech_ambience", __path__=[str(ROOT)])
+module("aromatech_ambience.const", DISCONNECT_DELAY=20, REPLY_TIMEOUT=5,
        SCAN_INTERVAL_SECONDS=300)
 
-spec = importlib.util.spec_from_file_location("ambience.protocol", ROOT / "protocol.py")
+spec = importlib.util.spec_from_file_location("aromatech_ambience.protocol", ROOT / "protocol.py")
 protocol = importlib.util.module_from_spec(spec)
 sys.modules[spec.name] = protocol
 spec.loader.exec_module(protocol)
-spec = importlib.util.spec_from_file_location("ambience.coordinator", ROOT / "coordinator.py")
+spec = importlib.util.spec_from_file_location("aromatech_ambience.coordinator", ROOT / "coordinator.py")
 coordinator_module = importlib.util.module_from_spec(spec)
 sys.modules[spec.name] = coordinator_module
 spec.loader.exec_module(coordinator_module)

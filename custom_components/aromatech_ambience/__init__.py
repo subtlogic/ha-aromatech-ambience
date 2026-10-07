@@ -1,9 +1,10 @@
 """AromaTech Ambience — local BLE control.
 
-The vendor's own integration (`ttrushin/ha-aromatech-scent-diffuser`) does not
-work with this model: it writes to characteristic `fff6`, which the Ambience
-does not implement. This is a separate integration for the `EE01` protocol
-family rather than a fork, so a HACS update to that one cannot revert it.
+The existing community integration for AromaTech diffusers
+(`ttrushin/ha-aromatech-scent-diffuser`) does not work with this model: it
+writes to characteristic `fff6`, which the Ambience does not implement. This is
+a separate integration for the `EE01` protocol family rather than a fork,
+because the two protocols share no service, characteristic or framing.
 """
 from __future__ import annotations
 

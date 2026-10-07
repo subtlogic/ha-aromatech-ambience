@@ -1,10 +1,11 @@
 """Schedule sensor for the AromaTech Ambience.
 
-Read-only. Intensity and the schedule window live inside a single 15-byte
-frame, so changing either means rewriting the whole thing - and getting that
-wrong would silently clobber a working schedule. Surfacing it as a sensor
-gives visibility without that risk; making it writable is a deliberate later
-step, not an oversight.
+Read-only summary of the schedule frame. The writable pieces - days, window
+and intensity - are separate switch, time and number entities.
+
+The frame trace used while debugging silent writes lives in the diagnostics
+download rather than here: as a state attribute it would be written to the
+recorder on every poll.
 """
 from __future__ import annotations
 
@@ -53,8 +54,7 @@ class AmbienceSchedule(AmbienceEntity, SensorEntity):
 
     @property
     def extra_state_attributes(self) -> dict[str, object]:
-        c = self.coordinator
-        s = c.data
+        s = self.coordinator.data
         if s is None:
             return {}
         raw = s.raw.get(_p.CMD_POWER)
@@ -68,10 +68,5 @@ class AmbienceSchedule(AmbienceEntity, SensorEntity):
             "light_rgb": s.rgb,
             "light_brightness": s.brightness,
             "firmware": s.firmware,
-            # Diagnostics. A write the device silently ignores looks exactly
-            # like a write that was never sent, unless you can see the bytes -
-            # and one "last write" slot is not enough, because the refresh
-            # that follows an unacknowledged command overwrites it.
             "raw_schedule": raw.hex(" ") if raw else None,
-            "trace": list(c.trace),
         }

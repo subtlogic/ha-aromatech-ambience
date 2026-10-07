@@ -30,9 +30,9 @@ module("homeassistant.config_entries", ConfigEntry=type("ConfigEntry", (), {}))
 module("homeassistant.core", HomeAssistant=type("HomeAssistant", (), {}))
 module("homeassistant.helpers")
 module("homeassistant.helpers.entity_platform", AddEntitiesCallback=object)
-module("ambience", __path__=[])
-module("ambience.const", DOMAIN="ambience")
-module("ambience.coordinator", AmbienceCoordinator=type("AmbienceCoordinator", (), {}))
+module("aromatech_ambience", __path__=[])
+module("aromatech_ambience.const", DOMAIN="aromatech_ambience")
+module("aromatech_ambience.coordinator", AmbienceCoordinator=type("AmbienceCoordinator", (), {}))
 
 
 class Entity:
@@ -40,9 +40,9 @@ class Entity:
         self.coordinator = coordinator
 
 
-module("ambience.entity", AmbienceEntity=Entity)
-path = Path(__file__).resolve().parents[1] / "custom_components/ambience/light.py"
-spec = importlib.util.spec_from_file_location("ambience.light", path)
+module("aromatech_ambience.entity", AmbienceEntity=Entity)
+path = Path(__file__).resolve().parents[1] / "custom_components/aromatech_ambience/light.py"
+spec = importlib.util.spec_from_file_location("aromatech_ambience.light", path)
 light = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(light)
 
