@@ -48,9 +48,14 @@ async def async_setup_entry(
 
 
 class AmbiencePower(AmbienceEntity, SwitchEntity):
-    """The diffuser itself."""
+    """Master on/off: whether the diffuser scents at all.
 
-    _attr_name = "Diffuser"
+    Named "Scenting" rather than "Diffuser" so it does not read as a second
+    strength control beside Intensity. The unique id keeps its original
+    "power" key, so existing entity ids are unaffected.
+    """
+
+    _attr_name = "Scenting"
 
     def __init__(self, coordinator: AmbienceCoordinator) -> None:
         super().__init__(coordinator, "power")

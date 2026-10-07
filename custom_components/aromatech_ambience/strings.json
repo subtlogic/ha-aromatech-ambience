@@ -20,7 +20,7 @@
   "entity": {
     "switch": {
       "power": {
-        "name": "Diffuser"
+        "name": "Scenting"
       },
       "sound": {
         "name": "Sound"

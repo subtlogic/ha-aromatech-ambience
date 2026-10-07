@@ -20,7 +20,7 @@ framing, so it needs its own implementation. The full decode is in
 
 | Entity | Type | Notes |
 |--------|------|-------|
-| Diffuser | switch | Master power |
+| Scenting | switch | Master on/off: whether the diffuser scents at all |
 | Light | light | RGB colour, brightness, effects Warm / Cool / Flow / Off |
 | Sound | switch | The unit's audible feedback |
 | Intensity | number | 1–4. Stored in the schedule, so setting it rewrites the schedule |

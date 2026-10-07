@@ -8,6 +8,8 @@ First standalone release.
   earlier private build must remove the old integration and add this one.
 - The Bluetooth frame trace moved from a sensor attribute to the diagnostics
   download, so it is no longer written to the recorder on every poll.
+- The master switch is named "Scenting" instead of "Diffuser", so it does not
+  read as a second strength control beside Intensity.
 - Added diagnostics, and brand images: a stylised capsule diffuser icon plus
   light and dark logos. They are our own drawings, deliberately not
   AromaTech's artwork or lettering.
