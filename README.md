@@ -93,6 +93,9 @@ python -m unittest discover -s tests -v
 
 The tests stub Home Assistant, so they run without it installed.
 
+The brand images in `custom_components/aromatech_ambience/brand/` are drawn by
+`tools/brand/draw_brand.py` (needs Pillow; pass `--font` off macOS).
+
 ## License
 
 MIT
